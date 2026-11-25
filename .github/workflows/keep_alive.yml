@@ -1,0 +1,46 @@
+name: FAST-I availability check
+
+"on":
+  schedule:
+    - cron: "17 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-i-production-availability
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Check out maintenance scripts
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Install isolated browser-check dependencies
+        run: |
+          python -m pip install --disable-pip-version-check "playwright==1.65.2" "PyYAML==6.0.3"
+          python -m playwright install --with-deps --only-shell chromium
+
+      - name: Validate workflow and exercise offline failure/wake scenarios
+        if: github.event_name == 'workflow_dispatch'
+        run: python -m unittest discover -s .github/maintenance -p "test_*.py" -v
+
+      - name: Visit FAST-I and wake it if necessary
+        run: python .github/maintenance/keep_alive.py
